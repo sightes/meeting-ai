@@ -50,11 +50,17 @@ genera actividades y decisiones, y convierte los acuerdos/acciones en issues de 
 - story_points: 1, 2, 3, 5 u 8 (tamaño de tarea).
 - priority: High, Medium o Low.
 - assignee: el nombre de la persona responsable si se menciona, si no "".
-- season: el nombre/nombre_id de la reunión de la que salió cada tarea.
+- session: el nombre exacto del encabezado "### Reunión: <nombre>" de la transcripción de la que salió cada tarea.
 
 Responde ÚNICAMENTE con JSON válido, con esta forma exacta:
 {{
   "summary": ["viñeta 1", "viñeta 2", ...],
+  "meetings": [
+    {{
+      "id": "nombre exacto de la reunión (encabezado del bloque)",
+      "tema": "tema central de la reunión en máximo 8 palabras"
+    }}
+  ],
   "tasks": [
     {{
       "title": "título accionable (imperativo, corto)",
@@ -64,7 +70,7 @@ Responde ÚNICAMENTE con JSON válido, con esta forma exacta:
       "story_points": 2,
       "eta": "AAAA-MM-DD",
       "assignee": "nombre o ''",
-      "session": "id de la reunión donde se planteó"
+      "session": "nombre exacto de la reunión donde se planteó"
     }}
   ]
 }}
@@ -82,8 +88,8 @@ TRANSCRIPCIONES (indexadas por fecha, más reciente primero):
         temperature=0.2,
         max_tokens=2048,
         extra_headers={
-            "HTTP-Referer": "https://github.com/openai/notekeeper",
-            "X-Title": "notekeeper-jira-tasks",
+            "HTTP-Referer": "https://github.com/sightes/meeting-ai",
+            "X-Title": "notekeeper",
         },
     )
     return _extract_json(response.choices[0].message.content)
@@ -97,16 +103,116 @@ def render_summary(data: dict) -> str:
     return "\n".join(lines)
 
 
+def _session_datetime(session_id: str) -> tuple[str, str]:
+    """Deriva fecha y hora legibles desde un id de sesión `YYYY-MM-DD_HH-MM-SS`."""
+    fecha, sep, hora = session_id.partition("_")
+    if not sep:
+        return session_id, "—"
+    hh, _, _ = hora.partition("-")
+    if "-" in hora:
+        hhmm = "-".join(str(int(p)) if p.isdigit() else p for p in hora.split("-")[:2])
+        hora = hhmm.replace("-", ":")
+    return fecha, hora
+
+
+def render_meetings(data: dict) -> str:
+    """Tabla con el mapeo de reuniones: fecha, hora y tema central."""
+    meetings = data.get("meetings") or []
+    if not meetings:
+        return ""
+
+    try:
+        from rich.console import Console
+        from rich.table import Table
+    except ImportError:
+        lines = ["=== MAPEO DE REUNIONES ===", ""]
+        for m in meetings:
+            fecha, hora = _session_datetime(m.get("id") or "")
+            lines.append(f"{fecha} {hora}  {m.get('tema', '—')}")
+        return "\n".join(lines)
+
+    table = Table(title="MAPEO DE REUNIONES", show_lines=True)
+    table.add_column("Fecha", style="cyan")
+    table.add_column("Hora", justify="center")
+    table.add_column("Tema central", style="bold")
+
+    for m in meetings:
+        fecha, hora = _session_datetime(m.get("id") or "")
+        table.add_row(fecha, hora, m.get("tema") or "—")
+
+    console = Console(file=__import__("io").StringIO(), force_terminal=False, no_color=True, width=60)
+    console.print(table)
+    return console.file.getvalue().rstrip()
+
+
 def render_tasks(data: dict) -> str:
+    """Imprime las tareas Jira como una tabla estructurada."""
+    tasks = data.get("tasks") or []
+    if not tasks:
+        return "=== TAREAS JIRA ===\n\n(no se generaron tareas)"
+
+    try:
+        from rich.console import Console
+        from rich.table import Table
+    except ImportError:
+        return render_tasks_plain(data)
+
+    table = Table(title="TAREAS JIRA", show_lines=True)
+    table.add_column("#", justify="right", style="dim")
+    table.add_column("Título")
+    table.add_column("Tipo", style="cyan")
+    table.add_column("Prioridad", style="magenta")
+    table.add_column("Pts", justify="center")
+    table.add_column("ETA")
+    table.add_column("Responsable")
+    table.add_column("Reunión\n(fecha/hora)", style="dim")
+
+    for i, t in enumerate(tasks, 1):
+        fecha, hora = _session_datetime(t.get("session") or "")
+        table.add_row(
+            str(i),
+            (t.get("title") or "Sin título"),
+            t.get("issue_type", "Task"),
+            t.get("priority", "-"),
+            str(t.get("story_points", "?")),
+            t.get("eta") or "—",
+            t.get("assignee") or "—",
+            f"{fecha} {hora}".rstrip(),
+        )
+
+    console = Console(
+        file=__import__("io").StringIO(),
+        force_terminal=False,
+        no_color=True,
+        width=170,
+    )
+    console.print(table)
+    buf = console.file.getvalue().rstrip()
+
+    desc_lines = []
+    for i, t in enumerate(tasks, 1):
+        desc = (t.get("description") or "").strip()
+        if desc:
+            desc_lines.append(f"  {i}. {desc}")
+
+    if desc_lines:
+        buf += "\n\nDETALLES:\n" + "\n".join(desc_lines)
+    return buf
+
+
+def render_tasks_plain(data: dict) -> str:
+    """Fallback sin rich: texto plano."""
     tasks = data.get("tasks") or []
     lines = ["=== TAREAS JIRA ===", ""]
     for i, t in enumerate(tasks, 1):
         eta = t.get("eta") or "—"
         assignee = t.get("assignee") or "—"
+        fecha, hora = _session_datetime(t.get("session") or "")
         lines.append(
             f"{i}. {t.get('title', 'Sin título')}  "
             f"[{t.get('issue_type', 'Task')}/{t.get('priority', '-')}/"
-            f"{t.get('story_points', '?')}pts/ETA {eta}/{assignee}]"
+            f"{t.get('story_points', '?')}pts/ETA {eta}/{assignee}/"
+            f"Reunión {fecha} {hora}]"
         )
         desc = (t.get("description") or "").strip()
         if desc:
@@ -121,8 +227,9 @@ def to_csv(data: dict) -> str:
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["Summary", "Issue Type", "Description", "Priority", "Story Points", "Due Date", "Assignee", "Session"])
+    writer.writerow(["Summary", "Issue Type", "Description", "Priority", "Story Points", "Due Date", "Assignee", "Session", "Meeting Date", "Meeting Time"])
     for t in data.get("tasks") or []:
+        fecha, hora = _session_datetime(t.get("session") or "")
         writer.writerow([
             t.get("title", ""),
             t.get("issue_type", "Task"),
@@ -132,6 +239,8 @@ def to_csv(data: dict) -> str:
             t.get("eta", ""),
             t.get("assignee", ""),
             t.get("session", ""),
+            fecha,
+            hora,
         ])
     return buf.getvalue()
 
@@ -144,9 +253,12 @@ def run(context: str, session: Path) -> dict:
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     (session / "jira_tasks.csv").write_text(to_csv(data), encoding="utf-8-sig")
-    (session / "meeting_summary.txt").write_text(
-        render_summary(data) + "\n\n" + render_tasks(data), encoding="utf-8"
-    )
+    mapeo = render_meetings(data)
+    report = render_summary(data) + "\n\n"
+    if mapeo:
+        report += mapeo + "\n\n"
+    report += render_tasks(data)
+    (session / "meeting_summary.txt").write_text(report, encoding="utf-8")
     save_metadata(session, {"jira_tasks": len(data.get("tasks") or [])})
 
     return data

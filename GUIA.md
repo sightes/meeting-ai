@@ -65,6 +65,60 @@ Reunión completa (recomendado)     | `-m --mic 5`                  | Tu voz + a
 
 ---
 
+## BlackHole: uso y recomendaciones
+
+### Qué es y cómo funciona
+**BlackHole** es un *driver de audio virtual* gratuito (https://existential.audio/blackhole/)
+que crea un "cable digital": todo lo que la app envía a su salida entra en BlackHole
+y queda disponible como una entrada que cualquier grabador puede leer.
+Es **imprescindible** en macOS para capturar el audio de la reunión, porque el
+hardware del micrófono jamás escucha el audio del sistema.
+
+### Instalación y configuración recomendada
+1. Descarga e instala el driver (BlackHole 2ch es suficiente para reuniones).
+2. Verifica que aparezcan nuevos dispositivos con:
+   ```bash
+   python -m notekeeper rec -l
+   ```
+   Debe listar `BlackHole 2ch` (y `BlackHole 16ch` si instalaste esa versión).
+3. **Ajusta TODOS los dispositivos implicados a la misma frecuencia de muestreo**
+   (48 kHz) en *Audio MIDI Setup*: bocinas, micrófono y BlackHole. Discrepancias de
+   frecuencia son la causa #1 de grabaciones en silencio o distorsionadas.
+4. Crea una **multi-salida** (p. ej. "notekeeper out") con `Bocinas + BlackHole 2ch`.
+   Así escuchas el audio Y este se captura a la vez.
+5. En la app de la reunión (Zoom / Meet / Teams), fija la **salida** a la multi-salida
+   "notekeeper out" y la **entrada** a tu micrófono. Mantén el **mic en silencio / mute** en
+   video-llamadas para evitar eco y doble captura.
+
+### Recomendaciones de buenas prácticas
+- **Siempre mezcla tu voz con la grabación**: usa el modo de reunión completa
+  (`-m --mic <id>`) en lugar de grabar solo BlackHole, para que tu voz quede
+  registrada y no dependas del "agregado" virtual.
+- **Preferible la mezcla en código (`-m`) antes que "agregados" de Audio MIDI**:
+  los agregados con BlackHole son frágiles y suelen dejar de capturar el sistema.
+- **Fija la sesión/duración** con `-t` para no grabar de más y ahorrar espacio:
+  las grabaciones WAV de reuniones de 1 hora ocupan ~330 MB a 48 kHz.
+- **Verifica niveles al terminar**: el comando imprime RMS/pico por canal. Si el canal
+  que esperabas suena plano (RMS muy bajo o 0), el audio real no llegó a esta entrada.
+- **Mantén BlackHole y los dispositivos a 48 kHz** tras cualquier agregado o actualización
+  del sistema operativo; macOS suele revertir estas configuraciones.
+
+### Alternativas si no puedes usar BlackHole
+- **Soundflower** (más viejo, requiere que firmes/instales con precaución en versiones nuevas de macOS).
+- **Loopback** (de pago, de Rogue Amoeba, con interfaz gráfica).
+- **Grabar solo tu voz** (mic físico) y pegar el audio de la reunión aparte, luego concatener
+  antes de transcribir.
+
+### Si la reunión es importante, haz una prueba rápida
+Antes de una reunión clave, graba 10 s y verifica:
+```bash
+python -m notekeeper rec -m --mic 5 -t 10
+python -m notekeeper show
+```
+Si la transcripción tiene sentido y ambos canales tienen señal, ya estás listo.
+
+---
+
 ## Grabar
 
 ```bash
@@ -159,6 +213,13 @@ NOTEKEEPER_DATA=recordings
 NOTEKEEPER_SYSTEM_DEVICE=BlackHole 2ch
 NOTEKEEPER_MIC_DEVICE=
 ```
+
+> **Seguridad de credenciales:** `.env` está en `.gitignore` y no se sube al repositorio.
+> El código **nunca** debe contener API keys, tokens ni secretos hardcodeados; todas las
+> credenciales se leen desde variables de entorno (`.env`). Si modificas el código, no
+> agregues claves en los archivos fuente: agrega la variable en `.env.example` (con un
+> valor de ejemplo) y usa `os.getenv()` para leerla. Si alguna vez se filtra una key a git,
+> revócala de inmediato en OpenRouter y rota la variable.
 
 ---
 

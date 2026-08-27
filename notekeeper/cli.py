@@ -157,8 +157,8 @@ def ask_llm(question: str, context: str) -> str:
             temperature=0.3,
             max_tokens=1024,
             extra_headers={
-                "HTTP-Referer": "https://github.com/openai/notekeeper",
-                "X-Title": _ascii_title(f"notekeeper-{question}")[:80],
+                "HTTP-Referer": "https://github.com/sightes/meeting-ai",
+                "X-Title": "notekeeper",
             },
         )
     except Exception as exc:
@@ -178,13 +178,6 @@ def ask_llm(question: str, context: str) -> str:
     if not content:
         return "(el modelo devolvió una respuesta vacía; reintenta o cambia LLM_MODEL en .env)"
     return content
-
-
-def _ascii_title(text: str) -> str:
-    import unicodedata
-
-    normalized = unicodedata.normalize("NFKD", text)
-    return normalized.encode("ascii", "ignore").decode("ascii")
 
 
 def _format_time(seconds: float) -> str:
@@ -225,10 +218,14 @@ def cmd_jira(args):
     print(f"=== Notekeeper - Jira ({label}) ===\n")
     data = run_jira(context, session)
 
-    from notekeeper.tasks import render_summary, render_tasks
+    from notekeeper.tasks import render_summary, render_tasks, render_meetings
 
     print(render_summary(data))
     print()
+    mapeo = render_meetings(data)
+    if mapeo:
+        print(mapeo)
+        print()
     print(render_tasks(data))
     print("Guardado: tasks.json, jira_tasks.csv, meeting_summary.txt en", session.name)
 
