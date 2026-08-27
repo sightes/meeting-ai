@@ -1,0 +1,5 @@
+#!/bin/bash
+# Resumen + tareas Jira de la última reunión transcrita.
+cd "$(dirname "$0")"
+source venv/bin/activate
+python -m notekeeper jira "$@"

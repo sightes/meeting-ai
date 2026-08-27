@@ -1,0 +1,15 @@
+# Recording
+sounddevice==0.5.1
+soundfile==0.13.1
+
+# Transcription
+faster-whisper==1.1.1
+
+# LLM (for skill command)
+openai==1.82.0
+
+# Config
+python-dotenv==1.1.0
+
+# Utils
+rich==14.0.0

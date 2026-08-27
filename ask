@@ -1,0 +1,6 @@
+#!/bin/bash
+# Pregunta con IA sobre tus transcripciones (pregunta se ingresa en el prompt).
+cd "$(dirname "$0")"
+source venv/bin/activate
+read -r -p "Tu pregunta sobre las transcripciones: " pregunta
+python -m notekeeper skill "$pregunta"

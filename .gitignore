@@ -1,0 +1,25 @@
+# Entornos virtuales
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.db
+
+# Secretos y configuración local
+.env
+
+# Datos de grabación y transcripciones (locales)
+recordings/
+data/audio/
+data/transcripts/
+
+# macOS
+.DS_Store

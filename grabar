@@ -1,0 +1,5 @@
+#!/bin/bash
+# Graba una reunión (mic + sistema) usando el venv del proyecto.
+cd "$(dirname "$0")"
+source venv/bin/activate
+python -m notekeeper rec -m --mic 9 "$@"
