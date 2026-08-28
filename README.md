@@ -1,27 +1,26 @@
 # Notekeeper
 
-CLI local para procesar reuniones grabadas: graba, transcribe, segmenta por
-contexto (empresa/proyecto), diariza hablantes, busca (texto y semántica) y
-consulta con IA —incluido un **chat interactivo en consola**.
+> **Local CLI for recording, transcribing, and analyzing meetings with AI.** Turn audio recordings into transcripts with speaker diarization, semantic search, and actionable summaries — all from your terminal.
+
+Local CLI for processing recorded meetings: record, transcribe, segment by context (company/project), diarize speakers, search (text and semantic), and query with AI — including an **interactive console chat**.
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-Not%20specified-lightgrey)
 ![CLI](https://img.shields.io/badge/CLI-notekeeper-4B8BBE)
 
-> Guía completa (captura de audio del sistema, comandos, configuración y troubleshooting): **[GUIA.md](GUIA.md)**
+> Full guide (system audio capture, commands, configuration, and troubleshooting): **[GUIA.md](GUIA.md)**
 
-## Características
+## Features
 
-- 🎙️ **Grabar** reuniones (micrófono + sistema).
-- 📝 **Transcribir** con Whisper (faster-whisper).
-- 🗂️ **Segmentar por contexto**: etiqueta cada reunión con empresa/proyecto
-  (`--tags`) y filtra consultas por contexto.
-- 👥 **Diarizar** hablantes (pyannote).
-- 🔎 **Buscar** por texto y **búsqueda semántica** (embeddings, local u OpenRouter).
-- 💬 **Consultar con IA**: comando `skill` (una pregunta) y `./ask` (**chat interactivo** con memoria).
-- 📋 **Tareas Jira**: resumen + `jira_tasks.csv` importable.
+- 🎙️ **Record** meetings (microphone + system audio).
+- 📝 **Transcribe** with Whisper (faster-whisper).
+- 🗂️ **Segment by context**: tag each meeting with company/project (`--tags`) and filter queries by context.
+- 👥 **Diarize** speakers (pyannote).
+- 🔎 **Search** by text and **semantic search** (embeddings, local or OpenRouter).
+- 💬 **Query with AI**: `skill` command (single question) and `./ask` (**interactive chat** with memory).
+- 📋 **Jira tasks**: summary + importable `jira_tasks.csv`.
 
-## Instalación
+## Installation
 
 ```bash
 cd meeting-ai
@@ -30,98 +29,92 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Para usar como comando `notekeeper`:
+To install as a `notekeeper` command:
 ```bash
 pip install -e .
 ```
 
-## Uso
+## Usage
 
-### Grabar audio
+### Record audio
 ```bash
-python -m notekeeper rec              # Grabar con settings por defecto
-python -m notekeeper rec -l           # Listar dispositivos de audio
-python -m notekeeper rec -d 10        # Usar dispositivo específico (10 = BlackHole 2ch)
-python -m notekeeper rec -m           # Reunión completa: micrófono + audio de sistema mezclados
-python -m notekeeper rec -m --mic 5   # Elegir el micrófono de la mezcla
-python -m notekeeper rec -t 60        # Grabar 60 segundos
-python -m notekeeper rec -o reunion   # Guardar en sesión "reunion"
-python -m notekeeper rec -m --tags scotiabank   # Asignar contexto (empresa/proyecto) a la reunión
+python -m notekeeper rec              # Record with default settings
+python -m notekeeper rec -l           # List audio devices
+python -m notekeeper rec -d 10        # Use specific device (10 = BlackHole 2ch)
+python -m notekeeper rec -m           # Full meeting: microphone + system audio mixed
+python -m notekeeper rec -m --mic 5   # Choose the microphone for mixing
+python -m notekeeper rec -t 60        # Record for 60 seconds
+python -m notekeeper rec -o meeting   # Save to session "meeting"
+python -m notekeeper rec -m --tags acme   # Assign context (company/project) to the meeting
 ```
 
-### Segmentar por contexto (empresas/proyectos)
+### Segment by context (companies/projects)
 
-Cada grabación puede llevar uno o más **tags** (contextos) guardados en
-`metadata.json`. Así puedes separar tu base de conocimiento por empresa,
-proyecto, cliente, etc.
+Each recording can carry one or more **tags** (contexts) saved in `metadata.json`. This lets you split your knowledge base by company, project, client, etc.
 
 ```bash
-./grabar --tags scotiabank                 # asignar contexto al grabar
-python -m notekeeper tag <sesion> scotiabank   # etiquetar/re-etiquetar una sesión
-python -m notekeeper list --tag scotiabank     # listar solo sesiones de ese contexto
+./grabar --tags acme                      # assign context when recording
+python -m notekeeper tag <session> acme   # tag/re-tag a session
+python -m notekeeper list --tag acme      # list only sessions with that context
 ```
 
-Para consultar solo las reuniones de un contexto, pasa el tag (sin `#`, el
-`#` lo interpreta bash como comentario):
+To query only meetings from a specific context, pass the tag (without `#`, as bash interprets `#` as a comment):
 
 ```bash
-./ask scotiabank                          # chat restringido a reuniones de Scotiabank
-python -m notekeeper skill "qué tareas" --tag scotiabank
-python -m notekeeper search "staging" --tag scotiabank
-python -m notekeeper jira --tags scotiabank
+./ask acme                                # chat restricted to acme meetings
+python -m notekeeper skill "what tasks" --tag acme
+python -m notekeeper search "staging" --tag acme
+python -m notekeeper jira --tags acme
 ```
 
-El tag funciona tanto con búsqueda por contexto como con embeddings
-(búsqueda semántica), y una reunión puede pertenecer a varios contextos a la vez.
+Tags work with both context search and embeddings (semantic search), and a single meeting can belong to multiple contexts.
 
-### Chat interactivo (tipo opencode, en consola)
+### Interactive chat (terminal-based, opencode-style)
 
-`./ask` abre un chat en la terminal donde puedes hacer varias preguntas
-seguidas sobre tus reuniones, manteniendo el contexto de la conversación:
+`./ask` opens a terminal chat where you can ask multiple follow-up questions about your meetings, maintaining conversation context:
 
 ```bash
-./ask                     # chat sobre todas tus reuniones
-./ask scotiabank          # chat restringido al contexto scotiabank
-./ask -e                  # chat con búsqueda semántica por embeddings
+./ask                     # chat about all your meetings
+./ask acme                # chat restricted to the acme context
+./ask -e                  # chat with semantic search via embeddings
 ```
 
-Escribe `salir`, `exit` o `quit` (o Ctrl-C) para terminar.
+Type `salir`, `exit` or `quit` (or Ctrl-C) to quit.
 
-### Transcribir
+### Transcribe
 ```bash
-python -m notekeeper transcript                # Transcribir todos los pendientes
-python -m notekeeper transcript -s 2025-08-26  # Transcribir sesión específica
+python -m notekeeper transcript                # Transcribe all pending
+python -m notekeeper transcript -s 2025-08-26  # Transcribe specific session
 ```
 
-### Ver transcripciones
+### View transcriptions
 ```bash
-python -m notekeeper list              # Listar todas las grabaciones
-python -m notekeeper show              # Mostrar la más reciente
-python -m notekeeper show 2025-08-26   # Mostrar sesión específica
+python -m notekeeper list              # List all recordings
+python -m notekeeper show              # Show the most recent
+python -m notekeeper show 2025-08-26   # Show specific session
 ```
 
-### Buscar
+### Search
 ```bash
-python -m notekeeper search "tareas pendientes"
+python -m notekeeper search "pending tasks"
 python -m notekeeper search "staging" -n 10
 ```
 
-### Preguntar con IA (RAG)
+### Ask with AI (RAG)
 ```bash
-python -m notekeeper skill qué tareas quedaron pendientes
-python -m notekeeper skill qué se decidió sobre staging
-python -m notekeeper skill quién quedó a cargo del backup
+python -m notekeeper skill what tasks are pending
+python -m notekeeper skill what was decided about staging
+python -m notekeeper skill who is in charge of the backup
 ```
 
-### Resumen + tareas Jira
+### Summary + Jira tasks
 ```bash
-python -m notekeeper jira                  # Sesión más reciente
-python -m notekeeper jira 2025-08-26       # Sesión específica
+python -m notekeeper jira                  # Most recent session
+python -m notekeeper jira 2025-08-26       # Specific session
 ```
-Genera `meeting_summary.txt`, `tasks.json` y `jira_tasks.csv` (importable a Jira) con
-titulo, descripción, tipo, prioridad, story points y ETA por tarea.
+Generates `meeting_summary.txt`, `tasks.json`, and `jira_tasks.csv` (importable to Jira) with title, description, type, priority, story points, and ETA per task.
 
-## Estructura de datos
+## Data structure
 
 ```
 recordings/
@@ -129,62 +122,61 @@ recordings/
 │   ├── recording.wav
 │   ├── transcript.txt
 │   ├── segments.json
-│   └── metadata.json   # aquí se guardan los "tags" (contextos)
+│   └── metadata.json   # tags (contexts) are stored here
 ├── 2025-08-25_10-00-00/
-│   ├── reunion.mp3
+│   ├── meeting.mp3
 │   ├── transcript.txt
 │   ├── segments.json
 │   └── metadata.json
 ```
 
-Ejemplo de `metadata.json` con tags:
+Example `metadata.json` with tags:
 
 ```json
 {
   "recorded_at": "2025-08-26T14:30:00",
   "duration": 1041.66,
-  "tags": ["scotiabank", "proyecto-migracion"]
+  "tags": ["acme", "migration-project"]
 }
 ```
 
-## Configuración (.env)
+## Configuration (.env)
 
 ```env
-# Transcripción
+# Transcription
 WHISPER_MODEL=large-v3
 WHISPER_DEVICE=auto
 WHISPER_COMPUTE_TYPE=int8
 
-# LLM via OpenRouter (para skill)
+# LLM via OpenRouter (for skill)
 LLM_MODEL=anthropic/claude-sonnet-4
 LLM_API_KEY=sk-or-...
 LLM_BASE_URL=https://openrouter.ai/api/v1
 
-# Datos
+# Data
 NOTEKEEPER_DATA=recordings
 ```
 
-## Requisitos
+## Requirements
 
 - Python 3.11+
-- ffmpeg (para soporte MP3/M4A)
-- GPU recomendada para Whisper large-v3
+- ffmpeg (for MP3/M4A support)
+- GPU recommended for Whisper large-v3
 
 ## Changelog
 
-Todos los cambios por versión se documentan en **[CHANGELOG.md](CHANGELOG.md)**.
+All version changes are documented in **[CHANGELOG.md](CHANGELOG.md)**.
 
-## Contribución
+## Contributing
 
-1. Haz *fork* del repositorio (https://github.com/sightes/meeting-ai).
-2. Crea una rama (`git checkout -b feature/mi-cambio`).
-3. Haz commit de tus cambios y abre un *pull request*.
+1. Fork the repository (https://github.com/sightes/meeting-ai).
+2. Create a branch (`git checkout -b feature/my-change`).
+3. Commit your changes and open a pull request.
 
-Para reportar errores o sugerir mejoras, abre un *issue* en
+To report bugs or suggest improvements, open an issue on
 [GitHub Issues](https://github.com/sightes/meeting-ai/issues).
 
-## Licencia
+## License
 
-Sin licencia explícita: el uso queda limitado al repositorio de `sightes/meeting-ai`.
-Contacta al autor antes de redistribuir.
-
+No explicit license: usage is limited to the `sightes/meeting-ai` repository.
+Contact the author before redistributing.
