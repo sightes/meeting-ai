@@ -36,6 +36,28 @@ EMBEDDING_OPENROUTER_MODEL = os.getenv(
     "EMBEDDING_OPENROUTER_MODEL", "openai/text-embedding-3-small"
 )
 
+# GitHub Projects v2 (crear issues + agregarlos a un panel de proyecto)
+# GITHUB_PROJECT_URL: URL del panel, p. ej. https://github.com/users/sightes/projects/9/views/1
+# GITHUB_REPO: repo donde se crean los issues (owner/nombre). Si está vacío se ignora el envío.
+GITHUB_PROJECT_URL = os.getenv("GITHUB_PROJECT_URL", "").strip()
+GITHUB_REPO = os.getenv("GITHUB_REPO", "").strip()
+
+# Asignar el issue creado a un usuario. Vacío = auto-detectar el usuario logueado en `gh`.
+GITHUB_ASSIGNEE = os.getenv("GITHUB_ASSIGNEE", "").strip()
+
+# Mapeo de valores de la tarea a los campos del panel GitHub Projects v2.
+# - GITHUB_STATUS_INITIAL: estado inicial del item (nombre de opción del campo Status).
+# - GITHUB_PRIORITY_MAP: prioridad de la tarea (High/Medium/Low) -> opción del campo Priority.
+# - GITHUB_SIZE_MAP: story_points de la tarea -> opción del campo Size.
+# Se dejan vacíos los que no se quieran rellenar. Las opciones deben existir en el panel.
+GITHUB_STATUS_INITIAL = os.getenv("GITHUB_STATUS_INITIAL", "Backlog")
+GITHUB_PRIORITY_MAP = os.getenv(
+    "GITHUB_PRIORITY_MAP", "High:P0, Medium:P1, Low:P2"
+)
+GITHUB_SIZE_MAP = os.getenv(
+    "GITHUB_SIZE_MAP", "1:XS, 2:S, 3:S, 5:M, 8:L, 13:XL"
+)
+
 # Diarización de hablantes (opcional; requiere acceso al modelo de HuggingFace)
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 DIARIZATION_MODEL = os.getenv(

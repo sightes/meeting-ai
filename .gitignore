@@ -22,5 +22,11 @@ data/audio/
 data/transcripts/
 data/embeddings.json
 
+# Resúmenes MD: se versionan en el repo de proyectos (project-tracking), no en el de código
+summaries/
+
+# Clone local del repo de proyectos (destino de ./resume)
+project-tracking/
+
 # macOS
 .DS_Store

@@ -1,0 +1,60 @@
+#!/bin/bash
+# Genera las resúmenes MD ([tag][fecha][tema].md) de todas las reuniones
+# que ya tienen meeting_summary.txt, en summaries/. Si el archivo existe, se reemplaza.
+#
+# Opcionalmente, si el repo de proyectos (GITHUB_PROJECT_REPO) está configurado
+# en .env, los resúmenes se copian y se pushean a ese repositorio.
+cd "$(dirname "$0")"
+source venv/bin/activate
+
+# Generar los resúmenes MD locales
+python -m notekeeper resume "$@"
+
+# --- Sincronizar con el repo de proyectos (si está configurado) ---
+PROJECT_REPO=$(python - <<'PY'
+from notekeeper.config import GITHUB_REPO
+print(GITHUB_REPO)
+PY
+)
+
+if [[ -z "$PROJECT_REPO" ]]; then
+    exit 0
+fi
+
+# Ruta local donde se clona el repo de proyectos
+PROJECT_DIR="${GITHUB_PROJECT_DIR:-$HOME/Documents/GITHUB/project-tracking}"
+
+# Nombre del repositorio (owner/nombre) -> carpeta local (último segmento)
+REPO_NAME="${PROJECT_REPO##*/}"
+
+if [[ -z "$GITHUB_PROJECT_DIR" ]]; then
+    PROJECT_DIR="$HOME/Documents/GITHUB/$REPO_NAME"
+fi
+
+echo ""
+echo "=== Sincronizando resúmenes con $PROJECT_REPO ==="
+
+# Clonar si no existe
+if [[ ! -d "$PROJECT_DIR/.git" ]]; then
+    echo "Clonando $PROJECT_REPO en $PROJECT_DIR..."
+    mkdir -p "$(dirname "$PROJECT_DIR")"
+    gh repo clone "$PROJECT_REPO" "$PROJECT_DIR" 2>/dev/null \
+        || git clone "https://github.com/$PROJECT_REPO.git" "$PROJECT_DIR"
+fi
+
+# Copiar los resúmenes
+SUMMARY_SRC="$(pwd)/summaries"
+SUMMARY_DST="$PROJECT_DIR/summaries"
+mkdir -p "$SUMMARY_DST"
+cp "$SUMMARY_SRC"/*.md "$SUMMARY_DST"/ 2>/dev/null
+
+# Commit + push
+cd "$PROJECT_DIR"
+git add summaries/
+if git diff --cached --quiet; then
+    echo "Sin cambios en los resúmenes."
+else
+    git commit -m "resúmenes de reuniones (notekeeper resume)"
+    git push
+    echo "Resúmenes subidos a $PROJECT_REPO."
+fi

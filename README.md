@@ -19,6 +19,8 @@ Local CLI for processing recorded meetings: record, transcribe, segment by conte
 - 🔎 **Search** by text and **semantic search** (embeddings, local or OpenRouter).
 - 💬 **Query with AI**: `skill` command (single question) and `./ask` (**interactive chat** with memory).
 - 📋 **Jira tasks**: summary + importable `jira_tasks.csv`.
+- 🔄 **Export to GitHub Projects**: creates issues and adds them to a v2 board, with fields (Status/Priority/Size/Estimate/dates) and context labels.
+- 📄 **Markdown summaries**: generates `summaries/[tag][date][topic].md` for each meeting.
 
 ## Installation
 
@@ -113,6 +115,33 @@ python -m notekeeper jira                  # Most recent session
 python -m notekeeper jira 2025-08-26       # Specific session
 ```
 Generates `meeting_summary.txt`, `tasks.json`, and `jira_tasks.csv` (importable to Jira) with title, description, type, priority, story points, and ETA per task.
+
+### Export to GitHub Projects
+If you configure `GITHUB_REPO` and `GITHUB_PROJECT_URL` (see `.env`), each
+meeting's tasks are synced automatically to a **GitHub Projects v2** board:
+it creates new issues (deduplicated against existing ones via LLM), adds them
+to the board, and fills in Status/Priority/Size/Estimate/dates.
+
+```bash
+python -m notekeeper jira                   # summary + tasks + export to board
+python -m notekeeper backfill               # fill fields of tasks already on the board
+python -m notekeeper describe-fields        # generate descriptions for board columns
+```
+
+> Note: `resume` and `backfill` do not create new tasks. Tasks are exported to
+> the board when running `jira`. `backfill` only fills in fields of tasks already
+> on the board.
+
+### Markdown summaries
+`./resume` converts each summarized meeting (with `meeting_summary.txt`) into a
+`summaries/[tag][date][topic].md` file (replaced if it already exists). It does
+not touch the GitHub board; it only generates local summaries and syncs them to
+the project repository (`project-tracking`).
+
+```bash
+./resume                                   # MD summaries for all meetings + sync
+python -m notekeeper resume
+```
 
 ## Data structure
 

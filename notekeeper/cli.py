@@ -512,6 +512,33 @@ def cmd_jira(args):
     print(render_tasks(data))
     print("Guardado: tasks.json, jira_tasks.csv, meeting_summary.txt en", session.name)
 
+    # Enviar tareas al panel de GitHub Projects (si está configurado).
+    from notekeeper import github_projects
+    if github_projects.enabled():
+        print("\n=== Sincronizando tareas con GitHub Projects ===")
+        print()
+        github_projects.sync_tasks(data.get("tasks") or [], session)
+
+
+def cmd_resume(args):
+    """Genera los .md de resumen para todas las reuniones resumidas."""
+    from notekeeper.summarize import resume_all
+
+    print("=== Notekeeper - Resume ===")
+    resume_all()
+
+
+def cmd_backfill(args):
+    """Rellena los campos (Priority/Size/Estimate/fechas) de las tareas ya en el panel."""
+    from notekeeper import github_projects
+    github_projects.backfill_item_fields()
+
+
+def cmd_describe_fields(args):
+    """Genera y fija descripciones de las opciones (columnas) de los campos del panel."""
+    from notekeeper import github_projects
+    github_projects.describe_fields(force=args.force, dry_run=args.dry_run)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -589,6 +616,18 @@ def main():
     tg.add_argument("--all", action="store_true", help="Aplicar a todas las sesiones")
     tg.add_argument("--from-tag", type=str, help="Aplicar a todas las sesiones que ya tengan este tag")
 
+    # resume
+    rs = sub.add_parser("resume", help="Generar los .md de resumen de todas las reuniones resumidas")
+    rs.add_argument("--all", action="store_true", help="(reservado) procesar también sesiones sin resumen")
+
+    # backfill
+    bf = sub.add_parser("backfill", help="Rellenar campos de las tareas ya existentes en GitHub Projects")
+
+    # describe-fields
+    df = sub.add_parser("describe-fields", help="Generar y fijar descripciones de las opciones (columnas) de los campos del panel GitHub Projects")
+    df.add_argument("-f", "--force", action="store_true", help="Regenerar descripciones aunque ya existan")
+    df.add_argument("-d", "--dry-run", action="store_true", help="Mostrar las descripciones sin aplicarlas a GitHub")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -607,6 +646,9 @@ def main():
         "diarize": cmd_diarize,
         "jira": cmd_jira,
         "tag": cmd_tag,
+        "resume": cmd_resume,
+        "backfill": cmd_backfill,
+        "describe-fields": cmd_describe_fields,
     }
 
     commands[args.command](args)
