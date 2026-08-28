@@ -123,6 +123,22 @@ def generate(context: str, today: str | None = None) -> dict:
 Responde ÚNICAMENTE con JSON válido, con esta forma exacta:
 {{
   "summary": ["viñeta 1", "viñeta 2", ...],
+  "decisiones": [
+    {{
+      "que": "decisión tomada (imperativo o hecho)",
+      "sesion": "nombre exacto de la reunión donde se decidió",
+      "responsable": "responsable si aplica, si no ''"
+    }}
+  ],
+  "acuerdos": ["acuerdo 1", "acuerdo 2", ...],
+  "pendientes": [
+    {{
+      "que": "acción pendiente",
+      "responsable": "responsable si aplica, si no ''",
+      "para_cuando": "fecha o 'sin fecha'"
+    }}
+  ],
+  "bloqueantes": ["bloqueante 1", ...],
   "meetings": [
     {{
       "id": "nombre exacto de la reunión (encabezado del bloque)",
@@ -130,6 +146,10 @@ Responde ÚNICAMENTE con JSON válido, con esta forma exacta:
     }}
   ]
 }}
+
+Las listas "decisiones", "acuerdos", "pendientes" y "bloqueantes" son OPCIONALES:
+inclúyelas solo si hay contenido real en las transcripciones; si no, usa [].
+Prioriza claridad y concreción (quién, qué, cuándo) en cada ítem.
 
 TRANSCRIPCIONES (indexadas por fecha, más reciente primero):
 {context}
@@ -174,11 +194,52 @@ TRANSCRIPCIONES (indexadas por fecha, más reciente primero):
     return data
 
 
+def _sec(title: str) -> str:
+    return f"\n── {title} ──"
+
+
 def render_summary(data: dict) -> str:
-    bullets = data.get("summary") or []
     lines = ["=== RESUMEN DE LA REUNIÓN ===", ""]
-    for b in bullets:
-        lines.append(f"• {b}")
+
+    bullets = data.get("summary") or []
+    if bullets:
+        for b in bullets:
+            lines.append(f"• {b}")
+
+    decisiones = data.get("decisiones") or []
+    if decisiones:
+        lines.append(_sec("DECISIONES"))
+        for d in decisiones:
+            quien = (d.get("responsable") or "").strip()
+            extra = f"  → Responsable: {quien}" if quien else ""
+            lines.append(f"• {d.get('que', '')}{extra}")
+
+    acuerdos = data.get("acuerdos") or []
+    if acuerdos:
+        lines.append(_sec("ACUERDOS"))
+        for a in acuerdos:
+            lines.append(f"• {a}")
+
+    pendientes = data.get("pendientes") or []
+    if pendientes:
+        lines.append(_sec("PENDIENTES / PRÓXIMOS PASOS"))
+        for p in pendientes:
+            who = (p.get("responsable") or "").strip()
+            cuando = (p.get("para_cuando") or "").strip()
+            partes = []
+            if who:
+                partes.append(f"Responsable: {who}")
+            if cuando:
+                partes.append(f"Para: {cuando}")
+            ext = f"  ({', '.join(partes)})" if partes else ""
+            lines.append(f"• {p.get('que', '')}{ext}")
+
+    bloqueantes = data.get("bloqueantes") or []
+    if bloqueantes:
+        lines.append(_sec("BLOQUEANTES"))
+        for b in bloqueantes:
+            lines.append(f"• ⚠ {b}")
+
     return "\n".join(lines)
 
 

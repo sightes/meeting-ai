@@ -7,6 +7,14 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Exportación a macOS Notas y Recordatorios** (`export-mac`): crea una nota en Apple
+  Notes con el resumen de la reunión y un recordatorio por tarea (título, prioridad,
+  fecha de vencimiento). Soporta `--dry-run` y filtro por sesión/`--tag`.
+- **Resumen más explícito**: el resumen ahora incluye secciones opcionales de
+  DECISIONES, ACUERDOS, PENDIENTES/PRÓXIMOS PASOS y BLOQUEANTES (cuando el LLM
+  detecta contenido real), además de las viñetas generales.
+
 ## [0.3.0] - 2026-08-28
 
 ### Added

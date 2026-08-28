@@ -143,6 +143,20 @@ the project repository (`project-tracking`).
 python -m notekeeper resume
 ```
 
+### Export to macOS Notes & Reminders
+Optional: create an Apple Notes note with the meeting summary and a
+Reminder per task.
+
+```bash
+python -m notekeeper export-mac --dry-run           # preview (no iCloud changes)
+python -m notekeeper export-mac                     # create notes + reminders
+python -m notekeeper export-mac 2026-08-27          # only one session
+python -m notekeeper export-mac --tag scotiabank    # only sessions with a tag
+```
+> The first real run asks for Automation permission for your terminal to
+> control Notes and Reminders (System Settings → Privacy). Use `--dry-run`
+> first to preview exactly what would be created.
+
 ## Data structure
 
 ```

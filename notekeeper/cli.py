@@ -540,6 +540,58 @@ def cmd_describe_fields(args):
     github_projects.describe_fields(force=args.force, dry_run=args.dry_run)
 
 
+def cmd_export_mac(args):
+    """Exporta resúmenes a Notas y tareas a Recordatorios (globalmente o por sesión)."""
+    from notekeeper.mac_exporter import plan_session, render_plan
+    from notekeeper.storage import list_sessions
+    from notekeeper.config import DATA_DIR
+
+    if args.session:
+        session = DATA_DIR / args.session
+        if not session.is_dir():
+            print(f"Sesión no encontrada: {args.session}")
+            return
+        sessions = [session]
+    elif getattr(args, "tag", None):
+        sessions = list_sessions(tags=[args.tag])
+    else:
+        sessions = list_sessions()
+
+    if not sessions:
+        print("No hay grabaciones.")
+        return
+
+    for s in sessions:
+        plan = plan_session(s)
+        if args.dry_run:
+            print(render_plan(s, plan))
+        else:
+            mac_export_session(s, plan)
+
+
+def mac_export_session(session: Path, plan: dict) -> None:
+    """Crea la nota y los recordatorios en macOS (sin --dry-run)."""
+    from notekeeper.mac_exporter import (
+        create_note_script,
+        create_reminder_script,
+        _gh_run,
+    )
+
+    print(f"=== {session.name} ===")
+    try:
+        note_id = _gh_run(["osascript", "-e", create_note_script(plan["note"])])
+        print(f"  ✓ Nota creada (id {note_id.strip()})")
+    except SystemExit as e:
+        print(f"  ✗ No se pudo crear la nota: {e}")
+
+    for r in plan["reminders"]:
+        try:
+            rid = _gh_run(["osascript", "-e", create_reminder_script(r)])
+            print(f"  ✓ Recordatorio: {r['title']} (id {rid.strip()})")
+        except SystemExit as e:
+            print(f"  ✗ No se pudo crear el recordatorio: {r['title']} — {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="notekeeper",
@@ -628,6 +680,12 @@ def main():
     df.add_argument("-f", "--force", action="store_true", help="Regenerar descripciones aunque ya existan")
     df.add_argument("-d", "--dry-run", action="store_true", help="Mostrar las descripciones sin aplicarlas a GitHub")
 
+    # export-mac
+    em = sub.add_parser("export-mac", help="Exportar resúmenes a Notas y tareas a Recordatorios (macOS)")
+    em.add_argument("session", nargs="?", help="ID de sesión (todas si se omite)")
+    em.add_argument("--tag", type=str, help="Solo sesiones con este tag")
+    em.add_argument("-d", "--dry-run", action="store_true", help="Solo mostrar lo que se crearía, sin tocar iCloud")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -649,6 +707,7 @@ def main():
         "resume": cmd_resume,
         "backfill": cmd_backfill,
         "describe-fields": cmd_describe_fields,
+        "export-mac": cmd_export_mac,
     }
 
     commands[args.command](args)
