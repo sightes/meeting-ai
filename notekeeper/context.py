@@ -40,9 +40,13 @@ def _session_block(session: Path, max_segments: int) -> str:
     return "\n".join(lines)
 
 
-def meetings_context(limit: int = 10, max_segments: int = 60, max_chars: int | None = None) -> str:
+def meetings_context(limit: int = 10, max_segments: int = 60, max_chars: int | None = None, tags: list[str] | None = None) -> str:
     """Últimas `limit` reuniones (más reciente primero, indexadas por fecha)."""
-    sessions = list_sessions()[:limit]
+    if tags:
+        from notekeeper.storage import get_tags
+        sessions = [s for s in list_sessions() if tags and set(tags).intersection(get_tags(s))][:limit]
+    else:
+        sessions = list_sessions()[:limit]
     text = "\n\n".join(_session_block(s, max_segments) for s in sessions)
     if max_chars and len(text) > max_chars:
         text = text[:max_chars] + "\n[contexto truncado por límite de tokens]"

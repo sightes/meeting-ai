@@ -21,14 +21,18 @@ def get_session_dir(session_id: str) -> Path:
     return DATA_DIR / session_id
 
 
-def list_sessions() -> list[Path]:
+def list_sessions(tags: list[str] | None = None) -> list[Path]:
     if not DATA_DIR.exists():
         return []
-    return sorted(
+    sessions = sorted(
         [d for d in DATA_DIR.iterdir() if d.is_dir()],
         key=lambda d: d.name,
         reverse=True,
     )
+    if tags:
+        tags = {t.lower() for t in tags}
+        sessions = [s for s in sessions if tags.intersection(get_tags(s))]
+    return sessions
 
 
 def find_audio_files() -> list[tuple[Path, Path | None]]:
@@ -72,6 +76,23 @@ def load_metadata(session: Path) -> dict:
     if meta_path.exists():
         return json.loads(meta_path.read_text(encoding="utf-8"))
     return {}
+
+
+def get_tags(session: Path) -> set[str]:
+    """Tags (contextos) asignados a una sesión, en minúsculas."""
+    meta = load_metadata(session)
+    return {str(t).strip().lower() for t in (meta.get("tags") or []) if str(t).strip()}
+
+
+def add_tags(session: Path, tags: list[str]) -> set[str]:
+    """Añade tags a una sesión y los persiste en metadata.json."""
+    tags = {str(t).strip().lower() for t in tags if str(t).strip()}
+    if not tags:
+        return get_tags(session)
+    current = get_tags(session)
+    current.update(tags)
+    save_metadata(session, {"tags": sorted(current)})
+    return current
 
 
 def get_audio_path(session: Path) -> Path | None:

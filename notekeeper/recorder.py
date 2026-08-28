@@ -143,7 +143,7 @@ def _channel_report(data: np.ndarray) -> float:
     return total_peak
 
 
-def _save(session_dir: Path, data: np.ndarray, sr: int, extra_meta: dict):
+def _save(session_dir: Path, data: np.ndarray, sr: int, extra_meta: dict, tags: list[str] | None = None):
     filepath = session_dir / "recording.wav"
     sf.write(str(filepath), data, sr)
     save_metadata(session_dir, {
@@ -152,6 +152,7 @@ def _save(session_dir: Path, data: np.ndarray, sr: int, extra_meta: dict):
         "sample_rate": sr,
         "channels": 1 if data.ndim == 1 else data.shape[1],
         "filename": "recording.wav",
+        "tags": [str(t).strip().lower() for t in (tags or []) if str(t).strip()],
         **extra_meta,
     })
     print(f"\nGuardado: {filepath}")
@@ -169,7 +170,7 @@ def _session_dir(output: str | None) -> Path:
     return session
 
 
-def _record_single(device, duration, output):
+def _record_single(device, duration, output, tags=None):
     index = _resolve_input(device)
     info = sd.query_devices(index)
     sr = int(info["default_samplerate"])
@@ -179,6 +180,8 @@ def _record_single(device, duration, output):
     print("Formato: WAV")
     if duration:
         print(f"Duración: {duration}s")
+    if tags:
+        print(f"Tags/contexto: {', '.join(tags)}")
 
     recording = _capture_streams([("rec", index, sr, channels)], duration)["rec"]
 
@@ -191,10 +194,10 @@ def _record_single(device, duration, output):
         print("Revisa la ruta del audio: la app que reproduce debe mandar salida")
         print("al multi-salida (notekeeper out) para que BlackHole reciba el sonido.")
 
-    return _save(_session_dir(output), recording, sr, {"source": info["name"]})
+    return _save(_session_dir(output), recording, sr, {"source": info["name"]}, tags=tags)
 
 
-def _record_mixed(device, mic, duration, output):
+def _record_mixed(device, mic, duration, output, tags=None):
     system_idx = _resolve_input(device) if device is not None else _resolve_device(NOTEKEEPER_SYSTEM_DEVICE)
     if mic is True:
         mic = NOTEKEEPER_MIC_DEVICE or None
@@ -213,6 +216,8 @@ def _record_mixed(device, mic, duration, output):
     print(f"  Sistema   : '{info_sys['name']}' ({spec[0][3]} ch)")
     print(f"  Micrófono : '{info_mic['name']}' ({spec[1][3]} ch)")
     print(f"  Formato   : mono @ {sr}Hz")
+    if tags:
+        print(f"  Tags/contexto: {', '.join(tags)}")
     if duration:
         print(f"Duración: {duration}s")
 
@@ -232,27 +237,28 @@ def _record_mixed(device, mic, duration, output):
         "source": "mic+system",
         "system_device": info_sys["name"],
         "mic_device": info_mic["name"],
-    })
+    }, tags=tags)
 
 
-def record(device=None, duration=None, output=None, mic=None):
+def record(device=None, duration=None, output=None, mic=None, tags=None):
     list_devices()
 
     if mic is not None:
-        return _record_mixed(device, mic, duration, output)
-    return _record_single(device, duration, output)
+        return _record_mixed(device, mic, duration, output, tags=tags)
+    return _record_single(device, duration, output, tags=tags)
 
 
-def list_recordings():
-    from notekeeper.storage import list_sessions, get_audio_path, load_metadata
+def list_recordings(sessions: list | None = None):
+    from notekeeper.storage import list_sessions, get_audio_path, load_metadata, get_tags
 
-    sessions = list_sessions()
+    if sessions is None:
+        sessions = list_sessions()
     if not sessions:
         print("No hay grabaciones.")
         return
 
-    print(f"{'Sesión':<25} {'Audio':<15} {'Duración':<10} {'Transcrito'}")
-    print("-" * 70)
+    print(f"{'Sesión':<25} {'Audio':<15} {'Duración':<10} {'Tags':<20} {'Transcrito'}")
+    print("-" * 80)
 
     for s in sessions:
         audio = get_audio_path(s)
@@ -261,5 +267,6 @@ def list_recordings():
         duration = meta.get("duration", "")
         dur_str = f"{duration:.0f}s" if isinstance(duration, (int, float)) else ""
         audio_str = audio.suffix if audio else ""
+        tags = ",".join(sorted(get_tags(s)))
         status = "✓" if has_transcript else "—"
-        print(f"  {s.name:<23} {audio_str:<15} {dur_str:<10} {status}")
+        print(f"  {s.name:<23} {audio_str:<15} {dur_str:<10} {tags:<20} {status}")

@@ -1,6 +1,33 @@
 #!/bin/bash
-# Pregunta con IA sobre tus transcripciones (pregunta se ingresa en el prompt).
+# Chat interactivo con IA sobre tus transcripciones (tipo opencode, en consola).
+# Uso: ./ask [contexto] [-e]
+#   contexto   filtra por tag/contexto (p. ej. ./ask scotiabank)
+#   -e         usa búsqueda semántica por embeddings
+# Escribe "salir", "exit" o "quit" para terminar el chat.
 cd "$(dirname "$0")"
 source venv/bin/activate
-read -r -p "Tu pregunta sobre las transcripciones: " pregunta
-python -m notekeeper skill "$pregunta"
+
+semantic=""
+tag=""
+for arg in "$@"; do
+    case "$arg" in
+        -e)
+            semantic="-s"
+            ;;
+        -*)
+            echo "Argumento no reconocido: $arg" >&2
+            echo "Uso: ./ask [contexto] [-e]" >&2
+            exit 1
+            ;;
+        *)
+            tag="$arg"
+            ;;
+    esac
+done
+
+args=()
+if [[ -n "$tag" ]]; then
+    args+=(--tag "$tag")
+fi
+
+python -m notekeeper chat $semantic "${args[@]}"

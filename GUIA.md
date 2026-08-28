@@ -166,7 +166,102 @@ python -m notekeeper skill -n 5 "tu pregunta"     # solo las últimas 5 reunione
 ```
 
 Requiere `LLM_API_KEY` en `.env` (OpenRouter: https://openrouter.ai/keys).
-Sin key, `skill` devuelve el contexto relevante pero sin respuesta de IA.
+
+### Búsqueda semántica (embeddings)
+
+`skill` por defecto vuelca las últimas N reuniones al LLM. Para consultas puntuales
+("¿qué se acordó sobre X?"), la **búsqueda semántica por embeddings** envía solo los
+fragmentos relevantes, así escala a cientos de reuniones sin quedarse sin contexto.
+
+```bash
+# 1) Indexa las transcripciones (una vez; regenera con --rebuild al transcribir nuevas)
+python -m notekeeper embed-index
+python -m notekeeper embed-index --rebuild     # forzar re-indexado
+python -m notekeeper embed-index -l            # ver estado del índice
+
+# 2) Consultar con IA usando búsqueda semántica
+python -m notekeeper skill -s "qué se acordó sobre los atributos de Investment Security"
+```
+
+**Proveedores (en `.env`):**
+
+| Proveedor | Cómo funciona | Requisitos |
+|---|---|---|
+| `local` (por defecto) | `sentence-transformers` en tu equipo | `pip install sentence-transformers`. Sin red; usa la GPU Apple (MPS) si está disponible. |
+| `openrouter` | API de embeddings de OpenRouter | Solo `LLM_API_KEY`. Útil si no quieres instalar dependencias locales. |
+
+Modelo por defecto: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
+(optimizado para español, ~470 MB, primera descarga; después queda cacheado).
+
+**Ajustes de calidad (`.env`):**
+
+| Variable | Default | Efecto |
+|---|---|---|
+| `EMBEDDING_CHUNK_CHARS` | `300` | Fusiona segmentos cortos del mismo hablante en chunks semánticos antes de embeddir (mejores vectores, menos fragmentos triviales). |
+| `EMBEDDING_MIN_SIM` | `0.0` | Piso absoluto de similitud; fragmentos bajo este valor se descartan (`0` = desactivado). |
+| `EMBEDDING_REL_SIM` | `0.7` | Umbral relativo al mejor resultado; con `0.7` solo entran fragmentos con sim ≥ 70 % del top (`0` = desactivado). |
+
+> Tras cambiar cualquiera de estos, regenera con `embed-index --rebuild`.
+
+### Segmentar por contexto (empresas/proyectos)
+
+Si trabajas con varios contextos (distintas empresas, proyectos o clientes)
+puedes **etiquetar cada reunión con tags** y luego restringir cualquier consulta
+a ese contexto. Una reunión puede llevar varios tags a la vez.
+
+```bash
+# Al grabar asignas el contexto
+./grabar --tags scotiabank
+./grabar --tags scotiabank proyecto-migracion      # varios contextos
+
+# Re-etiquetar una sesión ya grabada
+python -m notekeeper tag 2026-08-27_18-36-15 scotiabank
+# Añadir proyecto-migracion a todas las sesiones que YA tienen scotiabank
+python -m notekeeper tag --from-tag scotiabank proyecto-migracion
+
+# Filtrar por contexto
+python -m notekeeper list --tag scotiabank
+
+# Consultas restringidas a un contexto
+./ask scotiabank
+python -m notekeeper skill "qué tareas" --tag scotiabank
+python -m notekeeper skill -s "qué se acordó" --tag scotiabank
+python -m notekeeper search "staging" --tag scotiabank
+python -m notekeeper jira --tags scotiabank
+```
+
+> **Ojo con el `#`:** en bash un `#` precedido de espacio inicia un comentario,
+> así que `#scotiabank` como argumento no llega al programa. Por eso se usa el
+> flag `--tag`/`--tags` o se pasa el tag sin `#` a `./ask`.
+
+El filtro funciona igual con contexto por fechas (`skill`/`jira`) y con búsqueda
+semántica (`-s`). Los tags se guardan en `metadata.json` de cada sesión.
+
+### Chat interactivo (tipo opencode, en consola)
+
+`./ask` (y `notekeeper chat`) abren un chat en la terminal para hacer varias
+preguntas seguidas sobre tus reuniones, manteniendo la conversación:
+
+```bash
+./ask                 # chat sobre todas las reuniones
+./ask scotiabank      # chat restringido al contexto scotiabank
+./ask -e              # chat con búsqueda semántica por embeddings
+```
+
+```
+=== Chat sobre tus grabaciones [contexto: scotiabank] ===
+Escribe tu pregunta; 'salir', 'exit' o 'quit' para terminar.
+
+tú> ¿qué se decidió sobre staging?
+...
+asistente> ...
+tú> ¿y quién quedó a cargo?        <- recuerda lo anterior
+...
+tú> salir
+Adiós.
+```
+
+Escribe `salir`, `exit` o `quit` (o Ctrl-C) para terminar.
 
 ---
 
@@ -189,6 +284,56 @@ Cada tarea incluye: **title**, **description** (con criterio de aceptación),
 **story_points** (1/2/3/5/8 = tamaño), **eta** (AAAA-MM-DD), **assignee** y
 **session** (la reunión de origen, para agrupar por fecha).
 
+La generación es **en dos fases**: primero el modelo produce el resumen y el
+mapeo de reuniones (JSON corto), y luego las tareas Jira a partir de ese
+resumen + las transcripciones. Así una respuesta gigante no trunca el JSON y
+las tareas salen más estables.
+
+### Búsqueda semántica + responsable en las tareas
+
+En modo `-e` (embeddings), Jira genera `assignee` a partir de los fragmentos
+recuperados. Para que **aparezcan los responsables**:
+
+1. Diariza las sesiones para etiquetar quién habló en cada segmento
+   (pyannote.audio, ver [Diarización de hablantes](#diarización-de-hablantes)).
+2. Reindexa para que esos nombres/hablantes entren al vector:
+   `python -m notekeeper embed-index --rebuild`
+3. Genera las tareas: `python -m notekeeper jira -e`
+
+El contexto semántico incluye consultas orientadas a responsabilidades
+("quién se encarga", "me toca", "queda a cargo de...") y antepone el nombre
+del hablante a cada fragmento cuando está diarizado.
+
+### Diarización de hablantes
+
+Etiqueta cada segmento de la transcripción con su hablante
+(`SPEAKER_00`, `SPEAKER_01`...) para que el LLM pueda identificar quién asumió
+cada tarea:
+
+```bash
+python -m notekeeper diarize                 # todas las sesiones transcritas
+python -m notekeeper diarize 2026-08-27      # una sesión
+python -m notekeeper diarize -n              # además, pedir el nombre real de cada hablante
+python -m notekeeper diarize -r              # diarizar y reindexar embeddings al terminar
+```
+
+Requisitos:
+
+- `pyannote.audio` ya está incluido en `requirements.txt`.
+- `ffmpeg` instalado (`brew install ffmpeg`; lo usa `torchcodec`).
+- `HF_TOKEN` en `.env` con acceso al modelo (botón "Agree and access" de
+  https://huggingface.co/pyannote/speaker-diarization-community-1).
+- 100 % local: el modelo se descarga una sola vez y la inferencia corre en tu
+  máquina (CPU por defecto; si dispones de GPU/MPS se usa automáticamente, o
+  fija `DIARIZATION_DEVICE=cpu|cuda|mps` en `.env`).
+- Más preciso en GPU; en CPU funciona pero es lento.
+
+Con `-n` puedes asignar nombres reales a cada hablante (se guardan en
+`metadata.json` como `speakers`), por ejemplo `SPEAKER_00` → `Bastián`. Esos
+nombres se anteponen a los fragmentos en el índice/contexto. **Sin `-n` no se
+pregunta nada**: los hablantes se etiquetan automáticamente como
+`Locutor 1`, `Locutor 2`, etc. (orden estables dentro de cada reunión).
+
 ---
 
 ## Configuración (.env)
@@ -206,8 +351,19 @@ LLM_MODEL=anthropic/claude-sonnet-4
 LLM_API_KEY=sk-or-tu-key-aqui
 LLM_BASE_URL=https://openrouter.ai/api/v1
 
+# Embeddings (búsqueda semántica, skill --semantic)
+EMBEDDING_PROVIDER=local
+EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+# Si EMBEDDING_PROVIDER=openrouter:
+# EMBEDDING_OPENROUTER_MODEL=openai/text-embedding-3-small
+
 # Datos
 NOTEKEEPER_DATA=recordings
+
+# Diarización (opcional): token de HuggingFace con acceso a pyannote
+HF_TOKEN=hf_xxxx
+# DIARIZATION_MODEL=pyannote/speaker-diarization-community-1
+# DIARIZATION_DEVICE=auto   # auto | cpu | cuda | mps
 
 # Captura de audio (opcional)
 NOTEKEEPER_SYSTEM_DEVICE=BlackHole 2ch
@@ -230,11 +386,14 @@ recordings/
 ├── 2025-08-26_14-30-00/
 │   ├── recording.wav        # audio capturado
 │   ├── transcript.txt       # transcripción completa
-│   ├── segments.json        # segmentos con timestamps
-│   ├── metadata.json        # fecha, duración, fuente, etc.
+│   ├── segments.json        # segmentos con timestamps (y "speaker" si se diarizó)
+│   ├── metadata.json        # fecha, duración, fuente, speakers (nombres), etc.
 │   ├── meeting_summary.txt  # resumen (cmd jira)
 │   ├── tasks.json           # tareas Jira (cmd jira)
 │   └── jira_tasks.csv       # importable a Jira (cmd jira)
+
+data/
+├── embeddings.json          # índice de búsqueda semántica (embed-index)
 ```
 
 ---

@@ -17,41 +17,109 @@ def _client():
 
 
 def _extract_json(text: str) -> dict:
+    """Extrae un objeto JSON válido de la respuesta del LLM, de forma robusta."""
     text = text.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.startswith("json"):
-            text = text[4:].lstrip()
+
+    def _try(s: str):
+        s = s.strip()
+        if s.startswith("```"):
+            s = s.strip("`")
+            if s.startswith("json"):
+                s = s[4:].lstrip()
+        return json.loads(s)
+
+    # 1) Intento directo (y con fences)
     try:
-        return json.loads(text)
+        return _try(text)
     except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise SystemExit(f"El LLM no devolvió JSON válido:\n{text[:500]}")
-        return json.loads(text[start : end + 1])
+        pass
+
+    # 2) Buscar el primer objeto {...} balanceado completo, respetando strings
+    start = text.find("{")
+    while start != -1:
+        try:
+            end = _matching_brace(text, start)
+            return _try(text[start : end + 1])
+        except (json.JSONDecodeError, ValueError):
+            start = text.find("{", start + 1)
+
+    raise SystemExit(
+        "El LLM no devolvió JSON válido (¿respuesta truncada por límite de tokens? "
+        "Aumenta 'max_tokens' o baja la cantidad de reuniones con -n).\n"
+        f"Respuesta (inicio): {text[:400]}"
+    )
+
+
+def _matching_brace(text: str, start: int) -> int:
+    """Devuelve el índice de la llave `}` que cierra la `{` en `start`."""
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    raise ValueError("no se encontró llave de cierre balanceada")
+
+
+def _ask_json(client, prompt: str, max_tokens: int) -> dict:
+    """Una llamada al LLM que debe devolver un JSON (extracción robusta)."""
+    response = client.chat.completions.create(
+        model=LLM_MODEL,
+        messages=[
+            {"role": "system", "content": "Siempre respondes solo JSON válido, sin texto adicional."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.2,
+        max_tokens=max_tokens,
+        extra_headers={
+            "HTTP-Referer": "https://github.com/sightes/meeting-ai",
+            "X-Title": "notekeeper",
+        },
+    )
+    return _extract_json(response.choices[0].message.content)
 
 
 def generate(context: str, today: str | None = None) -> dict:
-    """Pide al LLM un resumen + tareas Jira a partir de un contexto de reuniones."""
+    """Pide al LLM un resumen + tareas Jira en dos fases.
+
+    1) Resumen y mapeo de reuniones (JSON corto, sin truncar).
+    2) Tareas Jira a partir del resumen + las transcripciones completas.
+    Evita que una sola respuesta gigante mezcle ambas cosas y quede truncada.
+    """
     if not context.strip() or context == "(no hay transcripciones)":
         raise SystemExit("No hay transcripciones para generar tareas.")
 
     today = today or date.today().isoformat()
-
     client = _client()
-    prompt = f"""Eres analista de producto para un equipo que trabaja con Jira.
-A partir de las transcripciones de reuniones (indexadas por fecha, la más reciente primero),
-genera actividades y decisiones, y convierte los acuerdos/acciones en issues de Jira:
-- Divide actividades grandes en múltiples issues accionables.
-- Incluye SOLO temas que se acordaron o se plantearon como tarea.
-- Escribe todos los campos en español.
-- ETA estimada usando {today} como fecha de hoy.
-- story_points: 1, 2, 3, 5 u 8 (tamaño de tarea).
-- priority: High, Medium o Low.
-- assignee: el nombre de la persona responsable si se menciona, si no "".
-- session: el nombre exacto del encabezado "### Reunión: <nombre>" de la transcripción de la que salió cada tarea.
 
+    base = (
+        "Eres analista de producto para un equipo que trabaja con Jira.\n"
+        "A partir de las transcripciones de reuniones (indexadas por fecha, la más reciente primero):\n"
+        "- Escribe todos los campos en español.\n"
+        "- ETA estimada usando {today} como fecha de hoy.\n"
+        "- story_points: 1, 2, 3, 5 u 8 (tamaño de tarea).\n"
+        "- priority: High, Medium o Low.\n"
+        "- assignee: el nombre de la persona responsable si se menciona o se infiere del hablante del fragmento (fragmentos diarizados vienen con prefijo \"Nombre: \" o \"Locutor N: \"); si claramente no hay responsable, \"\".\n"
+        "- session: el nombre exacto del encabezado \"### Reunión: <nombre>\" de la transcripción de la que salió cada tarea.\n"
+    ).format(today=today)
+
+    # ---- Fase 1: resumen + mapeo de reuniones (poca salida, sin truncamiento) ----
+    summary_prompt = base + f"""
 Responde ÚNICAMENTE con JSON válido, con esta forma exacta:
 {{
   "summary": ["viñeta 1", "viñeta 2", ...],
@@ -60,7 +128,27 @@ Responde ÚNICAMENTE con JSON válido, con esta forma exacta:
       "id": "nombre exacto de la reunión (encabezado del bloque)",
       "tema": "tema central de la reunión en máximo 8 palabras"
     }}
-  ],
+  ]
+}}
+
+TRANSCRIPCIONES (indexadas por fecha, más reciente primero):
+{context}
+"""
+    print("Consultando LLM (resumen)...")
+    data = _ask_json(client, summary_prompt, max_tokens=1200)
+
+    # ---- Fase 2: tareas Jira desde el resumen + transcripciones ----
+    bullets = data.get("summary") or []
+    resumen_bloque = "### RESUMEN DE REUNIONES\n" + "\n".join(f"- {b}" for b in bullets)
+
+    tasks_prompt = base + f"""
+Convierte los acuerdos/acciones en issues de Jira:
+- Divide actividades grandes en múltiples issues accionables.
+- Incluye SOLO temas que se acordaron o se plantearon como tarea.
+- session: nombre exacto de la reunión (encabezado "### Reunión: <nombre>") de donde salió cada tarea; usa también el resumen para ubicarla.
+
+Responde ÚNICAMENTE con JSON válido, con esta forma exacta:
+{{
   "tasks": [
     {{
       "title": "título accionable (imperativo, corto)",
@@ -75,24 +163,15 @@ Responde ÚNICAMENTE con JSON válido, con esta forma exacta:
   ]
 }}
 
+{resumen_bloque}
+
 TRANSCRIPCIONES (indexadas por fecha, más reciente primero):
 {context}
 """
-    print("Consultando LLM...")
-    response = client.chat.completions.create(
-        model=LLM_MODEL,
-        messages=[
-            {"role": "system", "content": "Siempre respondes solo JSON válido, sin texto adicional."},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.2,
-        max_tokens=2048,
-        extra_headers={
-            "HTTP-Referer": "https://github.com/sightes/meeting-ai",
-            "X-Title": "notekeeper",
-        },
-    )
-    return _extract_json(response.choices[0].message.content)
+    print("Consultando LLM (tareas)...")
+    tasks = _ask_json(client, tasks_prompt, max_tokens=3200).get("tasks") or []
+    data["tasks"] = tasks
+    return data
 
 
 def render_summary(data: dict) -> str:
@@ -127,7 +206,9 @@ def render_meetings(data: dict) -> str:
     except ImportError:
         lines = ["=== MAPEO DE REUNIONES ===", ""]
         for m in meetings:
-            fecha, hora = _session_datetime(m.get("id") or "")
+            fecha, hora = m.get("fecha"), m.get("hora")
+            if not fecha:
+                fecha, hora = _session_datetime(m.get("id") or "")
             lines.append(f"{fecha} {hora}  {m.get('tema', '—')}")
         return "\n".join(lines)
 
@@ -137,7 +218,9 @@ def render_meetings(data: dict) -> str:
     table.add_column("Tema central", style="bold")
 
     for m in meetings:
-        fecha, hora = _session_datetime(m.get("id") or "")
+        fecha, hora = m.get("fecha"), m.get("hora")
+        if not fecha:
+            fecha, hora = _session_datetime(m.get("id") or "")
         table.add_row(fecha, hora, m.get("tema") or "—")
 
     console = Console(file=__import__("io").StringIO(), force_terminal=False, no_color=True, width=60)
@@ -245,9 +328,33 @@ def to_csv(data: dict) -> str:
     return buf.getvalue()
 
 
+def _enrich_meetings(data: dict) -> dict:
+    """Completa `meetings` con fecha/hora derivadas de las sesiones reales.
+
+    El LLM puede no rellenar el campo `meetings` (sobre todo en modo embeddings),
+    así que derivamos fecha y hora de las sesiones transcritas y usamos el tema
+    del LLM como complemento cuando coincida el id.
+    """
+    from notekeeper.storage import list_sessions, get_transcript_text
+
+    llm_meetings = {
+        (m.get("id") or ""): m for m in (data.get("meetings") or []) if m.get("id")
+    }
+    meetings = []
+    for s in list_sessions():
+        if not get_transcript_text(s):
+            continue
+        fecha, hora = _session_datetime(s.name)
+        tema = llm_meetings.get(s.name, {}).get("tema", "")
+        meetings.append({"id": s.name, "fecha": fecha, "hora": hora, "tema": tema or ""})
+    data["meetings"] = meetings
+    return data
+
+
 def run(context: str, session: Path) -> dict:
     """Genera, guarda y devuelve el resultado (summary + tasks) para la sesión."""
     data = generate(context)
+    _enrich_meetings(data)
 
     (session / "tasks.json").write_text(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"

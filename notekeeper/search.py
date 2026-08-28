@@ -2,19 +2,26 @@
 import json
 from pathlib import Path
 
-from notekeeper.storage import list_sessions, get_transcript_text, load_metadata
+from notekeeper.storage import list_sessions, get_transcript_text, load_metadata, get_tags
 
 
-def search_transcripts(query: str, limit: int = 5) -> list[dict]:
+def search_transcripts(query: str, limit: int = 5, tags: list[str] | None = None) -> list[dict]:
     """Búsqueda por palabras clave con contexto.
 
+    Si ``tags`` se indica, filtra solo sesiones con alguno de esos tags.
     Devuelve los fragmentos más relevantes con información de la sesión.
     """
     results = []
     query_lower = query.lower()
     query_words = query_lower.split()
 
-    for session in list_sessions():
+    if tags:
+        tag_set = {t.lower() for t in tags}
+        sessions = [s for s in list_sessions() if tag_set.intersection(get_tags(s))]
+    else:
+        sessions = list_sessions()
+
+    for session in sessions:
         text = get_transcript_text(session)
         if not text:
             continue

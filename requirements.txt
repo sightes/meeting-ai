@@ -8,6 +8,12 @@ faster-whisper==1.1.1
 # LLM (for skill command)
 openai==1.82.0
 
+# Embeddings locales (búsqueda semántica; opcional si EMBEDDING_PROVIDER=openrouter)
+sentence-transformers==6.0.0
+
+# Diarización de hablantes (`notekeeper diarize`): requiere HF_TOKEN con acceso al modelo
+pyannote.audio==4.0.7
+
 # Config
 python-dotenv==1.1.0
 
