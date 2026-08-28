@@ -7,6 +7,17 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-28
+
+### Added
+- **Exportación a GitHub Projects v2** (`notekeeper jira`): crea issues, los agrega a
+  un panel de proyecto y rellena campos Status/Priority/Size/Estimate/fechas con labels
+  por contexto. Deduplica contra issues existentes vía LLM. Incluye `backfill` para
+  rellenar campos de tareas ya en el panel y `describe-fields` para documentar columnas.
+- **Resúmenes Markdown** (`./resume` / `notekeeper resume`): genera
+  `summaries/[tag][fecha][tema].md` por reunión y sincroniza los resúmenes al repo de
+  proyectos (`project-tracking`) con commit+push automático.
+
 ## [0.2.0] - 2026-08-28
 
 ### Added
@@ -19,13 +30,7 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/).
   - Etiquetar/re-etiquetar sesiones: `notekeeper tag <sesión> <tag> [--all|--from-tag]`.
   - Filtrar consultas con `--tag`/`--tags` en `skill`, `search`, `jira`, `chat`, `list`,
     `transcript`, `diarize` y `show`.
-- **Exportación a GitHub Projects v2** (`notekeeper jira`): crea issues, los agrega a
-  un panel de proyecto y rellena campos Status/Priority/Size/Estimate/fechas con labels
-  por contexto. Deduplica contra issues existentes vía LLM. Incluye `backfill` para
-  rellenar campos de tareas ya en el panel y `describe-fields` para documentar columnas.
-- **Resúmenes Markdown** (`./resume` / `notekeeper resume`): genera
-  `summaries/[tag][fecha][tema].md` por reunión y sincroniza los resúmenes al repo de
-  proyectos (`project-tracking`) con commit+push automático.
+- `notekeeper jira --tags <ctx>` y filtrado por contexto en embeddings (búsqueda semántica).
 
 ### Fixed
 - **Bug de shell**: el prefijo `#tag` no funcionaba como argumento (bash interpreta `#`
@@ -44,6 +49,7 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/).
 - Resumen + tareas Jira (`jira`): genera `meeting_summary.txt`, `tasks.json`
   y `jira_tasks.csv` importable a Jira.
 
-[Unreleased]: https://github.com/sightes/meeting-ai/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/sightes/meeting-ai/compare/v0.1.0...v0.2.0
+[Unreleased]: https://github.com/sightes/meeting-ai/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/sightes/meeting-ai/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/sightes/meeting-ai/releases/tag/v0.2.0
 [0.1.0]: https://github.com/sightes/meeting-ai/releases/tag/v0.1.0
