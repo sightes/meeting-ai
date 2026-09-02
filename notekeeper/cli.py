@@ -251,7 +251,25 @@ def cmd_chat(args):
     initial = " ".join(question_words)
     semantic = getattr(args, "semantic", False)
     meetings = getattr(args, "meetings", 10)
+    plain = getattr(args, "plain", False)
 
+    # Modo TUI (por defecto)
+    if not plain:
+        try:
+            from notekeeper.tui import NotekeeperChatApp
+            app = NotekeeperChatApp(
+                semantic=semantic,
+                tags=tags,
+                meetings=meetings,
+                initial=initial,
+            )
+            app.run()
+            return
+        except ImportError:
+            print("Textual no está instalado. Instálalo con: pip install textual")
+            print("O usa --plain para modo texto plano.\n")
+
+    # Modo texto plano (fallback)
     scope = f"[contexto: {', '.join(tags)}]" if tags else "[todas las reuniones]"
     print(f"{BOLD}=== Chat sobre tus grabaciones {scope} ==={RESET}")
     print(f"{DIM}Escribe tu pregunta; 'salir', 'exit' o 'quit' (o Ctrl-C) para terminar.{RESET}\n")
@@ -640,6 +658,7 @@ def main():
     ch.add_argument("-n", "--meetings", type=int, default=10, help="Cuántas reuniones incluir por turno (por defecto 10)")
     ch.add_argument("-s", "--semantic", action="store_true", help="Usar búsqueda semántica por embeddings (requiere índice)")
     ch.add_argument("--tag", type=str, help="Filtrar por tag/contexto (con # o sin)")
+    ch.add_argument("--plain", action="store_true", help="Modo texto plano sin TUI (input/output básico)")
 
     # embed-index
     ei = sub.add_parser("embed-index", help="Indexar transcripciones para búsqueda semántica (embeddings)")

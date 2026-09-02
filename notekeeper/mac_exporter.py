@@ -3,12 +3,17 @@
 Crea una nota en Apple Notes con el resumen de la reunión (`meeting_summary.txt`)
 y un recordatorio por cada tarea de `tasks.json`. Usa AppleScript vía `osascript`.
 
+El `body` de Apple Notes es HTML: convertimos el texto plano a HTML envuelto
+en un div monoespaciado para que se conserven saltos de línea (``<br>``) y la
+alineación de tablas ASCII en el resumen.
+
 Modo ``--dry-run``: solo muestra la nota y los recordatorios que se crearían,
 sin tocar iCloud ni pedir permisos de automatización.
 """
 import json
 import re
 import subprocess
+from html import escape  # noqa: F401  # re-exportado para _to_html
 from pathlib import Path
 
 PRIORITY_MAP = {"high": "1", "medium": "5", "low": "9"}  # Recordatorios: 1 alta, 5 media, 9 baja
@@ -23,6 +28,7 @@ def plan_session(session: Path) -> dict:
     tasks_file = session / "tasks.json"
 
     summary = summary_file.read_text(encoding="utf-8") if summary_file.exists() else ""
+    summary = re.sub(r"^\s*===[^=\n]*===\n+", "", summary)
     tasks = []
     if tasks_file.exists():
         raw = json.loads(tasks_file.read_text(encoding="utf-8"))
@@ -35,7 +41,7 @@ def plan_session(session: Path) -> dict:
     note = {
         "title": _note_title(session, meta),
         "folder": meta.get("notes_folder") or "Reuniones",
-        "body": summary,
+        "body": _to_html(summary),
     }
 
     reminders = []
@@ -99,6 +105,23 @@ def _esc(text: str) -> str:
     return '"' + text + '"'
 
 
+_NOTE_STYLE = (
+    "font-family: Menlo, 'SF Mono', Courier, monospace; font-size: 12px;"
+)
+
+
+def _to_html(text: str) -> str:
+    """Convierte texto plano a HTML seguro para el body de Apple Notes.
+
+    Texto envuelto en un ``<div>`` con fuente monoespaciada para que los bullets
+    y las tablas ASCII del resumen mantengan su alineación. Cada línea termina
+    en ``<br>`` para no perder los saltos de línea.
+    """
+    safe = escape(str(text or ""))
+    safe = safe.replace("\n", "<br>")
+    return f'<div style="{_NOTE_STYLE}">{safe}</div>'
+
+
 def _gh_run(args: list[str]) -> str:
     """Ejecuta un comando (osascript) y devuelve stdout, o lanza SystemExit."""
     try:
@@ -115,26 +138,45 @@ def _gh_run(args: list[str]) -> str:
 
 
 def create_note_script(note: dict) -> str:
+    """Genera el AppleScript para la nota, creando la carpeta si no existe."""
     folder = _esc(note.get("folder") or "Reuniones")
     body = _esc(note.get("body") or "")
-    return (
-        "tell application \"Notes\"\n"
-        "  set targetFolder to first folder whose name is " + folder + "\n"
-        "  set newNote to make new note at targetFolder with properties {body: " + body + "}\n"
-        "  return id of newNote\n"
-        "end tell\n"
-    )
+    lines = ['tell application "Notes"']
+    lines.append(f"  set folderName to {folder}")
+    lines.append("  set targetFolder to missing value")
+    lines.append("  try")
+    lines.append("    set targetFolder to first folder whose name is folderName")
+    lines.append("  end try")
+    lines.append("  if targetFolder is missing value then")
+    lines.append("    set targetFolder to make new folder with properties {name: folderName}")
+    lines.append("  end if")
+    lines.append("  set newNote to make new note at targetFolder with properties {body: " + body + "}")
+    lines.append("  return id of newNote")
+    lines.append("end tell")
+    return "\n".join(lines) + "\n"
 
 
 def create_reminder_script(reminder: dict) -> str:
+    """Genera el AppleScript para el recordatorio, creando la lista si no existe."""
     name = _esc(reminder.get("title") or "")
     notes = _esc(reminder.get("notes") or "")
+    list_name = _esc(reminder.get("list") or "Reuniones")
     priority = reminder.get("priority") or "5"
     lines = ['tell application "Reminders"']
-    lines.append(f'  set newReminder to make new reminder with properties {{name: {name}, body: {notes}, priority: {priority}}}')
+    lines.append(f"  set listName to {list_name}")
+    lines.append("  set targetList to missing value")
+    lines.append("  try")
+    lines.append("    set targetList to first list whose name is listName")
+    lines.append("  end try")
+    lines.append("  if targetList is missing value then")
+    lines.append("    set targetList to make new list at end of lists with properties {name: listName}")
+    lines.append("  end if")
+    lines.append("  tell targetList")
+    lines.append(f"    set newReminder to make new reminder with properties {{name: {name}, body: {notes}, priority: {priority}}}")
     due = reminder.get("due")
     if due:
-        lines.append(f'  set due date of newReminder to date "{due}"')
+        lines.append(f'    set due date of newReminder to date "{due}"')
+    lines.append("  end tell")
     lines.append("  return (id of newReminder) as string")
     lines.append("end tell")
     return "\n".join(lines) + "\n"

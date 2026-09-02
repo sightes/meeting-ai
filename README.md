@@ -102,6 +102,54 @@ python -m notekeeper search "pending tasks"
 python -m notekeeper search "staging" -n 10
 ```
 
+### Speaker diarization
+
+Labels each transcript segment with its speaker (`SPEAKER_00`, `SPEAKER_01`...) using pyannote, so the LLM can identify who took on each task:
+
+```bash
+python -m notekeeper diarize                 # all transcribed sessions
+python -m notekeeper diarize 2025-08-26      # one session
+python -m notekeeper diarize --tag acme      # only sessions with a tag
+python -m notekeeper diarize -n              # also prompt for each speaker's real name
+python -m notekeeper diarize -r              # diarize + rebuild the embedding index
+python -m notekeeper diarize -f              # re-diarize even if already done
+```
+
+Requires `HF_TOKEN` in `.env` with access to the model (click "Agree and access" at
+[pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)).
+Inference is 100% local (CPU by default; GPU/MPS auto-detected, or set
+`DIARIZATION_DEVICE=cpu|cuda|mps`).
+
+With `-n` you assign real names (saved in `metadata.json` as `speakers`), e.g.
+`SPEAKER_00` → `Jane`. Without `-n`, speakers are auto-labeled `Locutor 1`,
+`Locutor 2`, etc. Speaker names are prepended to fragments in the embedding
+index and LLM context — rebuild the index afterwards (`embed-index --rebuild`
+or `diarize -r`) so they reach semantic search and Jira task assignees.
+
+### Semantic search (embeddings)
+
+By default, `skill` dumps the last N meetings into the LLM. For pointed
+questions ("what was agreed about X?"), **semantic search** sends only the
+relevant fragments, so it scales to hundreds of meetings without running out
+of context.
+
+```bash
+# 1) Index the transcripts (once; re-run with --rebuild after new transcriptions)
+python -m notekeeper embed-index
+python -m notekeeper embed-index --rebuild     # force re-index
+python -m notekeeper embed-index -l            # show index status
+
+# 2) Query using the index
+python -m notekeeper skill -s "what was agreed about staging"
+python -m notekeeper jira -e                   # tasks from relevant fragments
+./ask -e                                       # interactive chat with embeddings
+```
+
+Providers (in `.env`): `EMBEDDING_PROVIDER=local` (default, sentence-transformers,
+offline) or `openrouter` (uses `LLM_API_KEY`). Quality tuning via
+`EMBEDDING_CHUNK_CHARS`, `EMBEDDING_MIN_SIM` and `EMBEDDING_REL_SIM` — see
+[GUIA.md](GUIA.md) for details.
+
 ### Ask with AI (RAG)
 ```bash
 python -m notekeeper skill what tasks are pending
@@ -195,6 +243,15 @@ WHISPER_COMPUTE_TYPE=int8
 LLM_MODEL=anthropic/claude-sonnet-4
 LLM_API_KEY=sk-or-...
 LLM_BASE_URL=https://openrouter.ai/api/v1
+
+# Embeddings (semantic search)
+EMBEDDING_PROVIDER=local
+EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+
+# Speaker diarization (optional, for `diarize`)
+# HF_TOKEN=hf_xxxx
+# DIARIZATION_MODEL=pyannote/speaker-diarization-community-1
+# DIARIZATION_DEVICE=auto
 
 # Data
 NOTEKEEPER_DATA=recordings

@@ -23,7 +23,7 @@ def list_devices():
     print()
 
 
-def _resolve_device(device: str | int | None) -> int | None:
+def _resolve_device(device: str | int | None, input_only: bool = False) -> int | None:
     if device is None:
         return None
     try:
@@ -32,7 +32,10 @@ def _resolve_device(device: str | int | None) -> int | None:
         pass
     devices = sd.query_devices()
     name = str(device).lower()
-    matches = [i for i, d in enumerate(devices) if name in d["name"].lower()]
+    if input_only:
+        matches = [i for i, d in enumerate(devices) if name in d["name"].lower() and d["max_input_channels"] > 0]
+    else:
+        matches = [i for i, d in enumerate(devices) if name in d["name"].lower()]
     if not matches:
         raise SystemExit(f"Dispositivo '{device}' no encontrado.")
     if len(matches) > 1:
@@ -44,7 +47,7 @@ def _resolve_device(device: str | int | None) -> int | None:
 def _resolve_input(device) -> int:
     if device is None:
         return sd.query_devices(kind="input")["index"]
-    return _resolve_device(device)
+    return _resolve_device(device, input_only=True)
 
 
 def _reporter(stop: threading.Event):
@@ -66,24 +69,84 @@ def _capture_streams(streams: list[tuple[str, int, int, int]], duration: int | N
         def callback(indata, frames, time_info, status):
             buffers[label].append(indata.copy())
 
-        if duration:
-            buffers[label].append(
-                sd.rec(
-                    frames=int(duration * sr),
-                    samplerate=sr,
-                    channels=channels,
-                    dtype="float32",
-                    device=device,
-                    blocking=True,
-                )
-            )
-            return
+        info = sd.query_devices(device)
+        actual_sr = sr if sr else int(info["default_samplerate"])
+        device_max_ch = info["max_input_channels"]
+        actual_ch = channels if channels else (max(1, device_max_ch) if device_max_ch > 0 else 1)
 
-        with sd.InputStream(
-            samplerate=sr, channels=channels, dtype="float32", device=device, callback=callback
-        ):
-            while not stop.is_set():
-                stop.wait(5)
+        print(f"  [{label}] Dispositivo: '{info['name']}'")
+        print(f"  [{label}] max_input_channels={device_max_ch}, default_samplerate={info['default_samplerate']}")
+        print(f"  [{label}] Intentando: {actual_sr}Hz / {actual_ch}ch")
+
+        configs = [
+            (actual_sr, actual_ch),
+            (actual_sr, 1),
+            (44100, actual_ch),
+            (44100, 1),
+            (48000, 1),
+        ]
+
+        last_err = None
+        for try_sr, try_ch in configs:
+            try:
+                if duration:
+                    buffers[label].append(
+                        sd.rec(
+                            frames=int(duration * try_sr),
+                            samplerate=try_sr,
+                            channels=try_ch,
+                            dtype="float32",
+                            device=device,
+                            blocking=True,
+                        )
+                    )
+                    return
+                else:
+                    with sd.InputStream(
+                        samplerate=try_sr, channels=try_ch, dtype="float32", device=device, callback=callback
+                    ):
+                        while not stop.is_set():
+                            stop.wait(5)
+                    return
+            except sd.PortAudioError as e:
+                last_err = e
+                if try_ch > 1 or try_sr != 44100:
+                    print(f"  [{label}] {try_sr}Hz/{try_ch}ch no soportado, probando siguiente config...")
+                continue
+
+        default_idx = sd.default.device[0]
+        if default_idx != device:
+            print(f"  [{label}] Probando dispositivo por defecto...")
+            try:
+                default_info = sd.query_devices(default_idx)
+                default_sr = int(default_info["default_samplerate"])
+                default_ch = max(1, default_info["max_input_channels"])
+                if duration:
+                    buffers[label].append(
+                        sd.rec(
+                            frames=int(duration * default_sr),
+                            samplerate=default_sr,
+                            channels=default_ch,
+                            dtype="float32",
+                            device=default_idx,
+                            blocking=True,
+                        )
+                    )
+                    return
+                else:
+                    with sd.InputStream(
+                        samplerate=default_sr, channels=default_ch, dtype="float32", device=default_idx, callback=callback
+                    ):
+                        while not stop.is_set():
+                            stop.wait(5)
+                    return
+            except sd.PortAudioError as e:
+                print(f"  [{label}] Dispositivo por defecto también falló: {e}")
+
+        raise RuntimeError(
+            f"No se pudo abrir '{info['name']}': ninguna configuración compatible. "
+            f"Último error: {last_err}"
+        )
 
     threads = [
         threading.Thread(target=worker, args=(label, device, sr, ch), name=label, daemon=True)
@@ -174,7 +237,7 @@ def _record_single(device, duration, output, tags=None):
     index = _resolve_input(device)
     info = sd.query_devices(index)
     sr = int(info["default_samplerate"])
-    channels = info["max_input_channels"]
+    channels = max(1, min(info["max_input_channels"], 2))
 
     print(f"Grabando desde '{info['name']}': {channels} canal(es) @ {sr}Hz")
     print("Formato: WAV")
@@ -198,7 +261,7 @@ def _record_single(device, duration, output, tags=None):
 
 
 def _record_mixed(device, mic, duration, output, tags=None):
-    system_idx = _resolve_input(device) if device is not None else _resolve_device(NOTEKEEPER_SYSTEM_DEVICE)
+    system_idx = _resolve_input(device) if device is not None else _resolve_device(NOTEKEEPER_SYSTEM_DEVICE, input_only=True)
     if mic is True:
         mic = NOTEKEEPER_MIC_DEVICE or None
     mic_idx = _resolve_input(mic)
